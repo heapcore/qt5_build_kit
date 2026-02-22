@@ -1,0 +1,39 @@
+FROM --platform=linux/amd64 ubuntu:16.04
+COPY remove-xinerama.patch /tmp/remove-xinerama.patch
+
+RUN \
+    set -eux && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt -y update && \
+    apt -y upgrade && \
+    apt -y install \
+        build-essential python perl git wget nano p7zip-full \
+        libfontconfig1-dev libfreetype6-dev libxrender-dev libxcb-render0-dev libxcb-render-util0-dev \
+        libxcb-shape0-dev libxcb-randr0-dev libxcb-xfixes0-dev libxcb-sync-dev libxcb-shm0-dev \
+        libxcb-icccm4-dev libxcb-keysyms1-dev libxcb-image0-dev libxkbcommon-dev libxkbcommon-x11-dev \
+        libxext-dev libx11-dev libxcb1-dev libx11-xcb-dev && \
+    apt -y autoremove && \
+    apt -y autoclean && \
+    apt -y clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    exit 0
+
+RUN \
+    set -eux && \
+    cd /opt && \
+    wget -q http://danields966.ru:9724/Qt-5.15.7z && \
+    7z x Qt-5.15.7z && \
+    cd /opt/Qt-5.15/qtbase && \
+    git apply /tmp/remove-xinerama.patch && \
+    cd /opt/Qt-5.15/ && \
+    ./configure -v -prefix "/usr/local/Qt-5.15" \
+    -no-avx -c++std c++14 -static -optimize-size -release -opensource -confirm-license \
+    -fontconfig -system-freetype -bundled-xcb-xinput -nomake examples -nomake tests -nomake tools \
+    -no-cups -no-dbus -no-gif -no-iconv -no-icu -no-opengl -no-openssl -no-openvg -no-pch -no-sql-sqlite \
+    -make libs -qt-harfbuzz -qt-libjpeg -qt-libpng -qt-pcre -qt-zlib -skip wayland && \
+    make -j $(nproc) && \
+    make install && \
+    exit 0
+
+ENV PATH="${PATH}:/usr/local/Qt-5.15/bin"
+ENTRYPOINT ["/bin/bash", "-l", "-c"]

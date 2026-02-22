@@ -1,0 +1,75 @@
+FROM --platform=linux/amd64 ubuntu:20.04
+COPY macos-fix-mkspecs.patch /tmp/macos-fix-mkspecs.patch
+
+ARG OSX_SDK="MacOSX10.14.sdk.tar.bz2"
+ARG OSX_SDK_URL="https://github.com/joseluisq/macosx-sdks/releases/download/10.14/${OSX_SDK}"
+ARG CMAKE_VERSION="cmake-3.14.5-Linux-x86_64"
+ARG CMAKE_DISTRO="${CMAKE_VERSION}.tar.gz"
+ARG CMAKE_DISTRO_URL="https://cmake.org/files/v3.14/$CMAKE_DISTRO"
+
+RUN \
+    set -eux && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt -y update && \
+    apt -y upgrade && \
+    apt -y install \
+        build-essential python3 perl git patch wget nano \
+        bash clang bzip2 binutils-multiarch-dev cpio xz-utils \
+        libbz2-dev libmpc-dev libmpfr-dev libgmp-dev libpsi3-dev libssl-dev \
+        libxml2-dev libz-dev liblzma-dev lzma-dev zlib1g-dev && \
+    apt -y autoremove && \
+    apt -y autoclean && \
+    apt -y clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    exit 0
+
+RUN \
+    set -eux && \
+    cd /opt && \
+    wget -q $CMAKE_DISTRO_URL && \
+    tar -C /opt -xzf $CMAKE_DISTRO && \
+    exit 0
+ENV PATH="/opt/${CMAKE_VERSION}/bin:$PATH"
+
+RUN \
+    set -eux && \
+    cd /opt && \
+    git clone https://github.com/tpoechtrager/osxcross.git && \
+    cd /opt/osxcross && \
+    wget -q $OSX_SDK_URL -O tarballs/$OSX_SDK && \
+    OCDEBUG=1 OSX_VERSION_MIN=10.13 UNATTENDED=1 ENABLE_COMPILER_RT_INSTALL=1 \
+        TARGET_DIR=/usr/local/osxcross ./build.sh && \
+    ln -s /usr/local/osxcross/bin/xcrun /usr/bin/xcrun && \
+    exit 0
+ENV PATH="/usr/local/osxcross/bin:$PATH"
+
+RUN \
+    set -eux && \
+    cd /opt/osxcross && \
+    x86_64-apple-darwin18-clang++ oclang/test.cpp -O3 -o test && \
+    exit 0
+
+RUN \
+    set -eux && \
+    cd /opt && \
+    git clone --depth 1 -b 5.15 https://github.com/qt/qt5.git && \
+    cd /opt/qt5 && \
+    git clone --depth 1 -b 5.15 https://github.com/qt/qtbase.git && \
+    cd /opt/qt5/qtbase && \
+    git apply /tmp/macos-fix-mkspecs.patch && \
+    exit 0
+
+RUN \
+    cd /opt/qt5 && \
+    ./configure -v -prefix "/usr/local/Qt-5.15" \
+        -xplatform macx-clang -device-option CROSS_COMPILE=x86_64-apple-darwin18- \
+        -no-avx -c++std c++14 -static -optimize-size -release -opensource -confirm-license \
+        -nomake examples -nomake tests -nomake tools -no-cups -no-dbus -no-gif -no-iconv \
+        -no-icu -no-opengl -no-openssl -no-openvg -no-pch -no-sql-sqlite -no-ssl \
+        -make libs -qt-harfbuzz -qt-libjpeg -qt-libpng -qt-pcre -qt-zlib -skip wayland && \
+    make -j $(nproc) && \
+    make install && \
+    exit 0
+ENV PATH="/usr/local/Qt-5.15/bin:$PATH"
+
+ENTRYPOINT ["/bin/bash", "-l", "-c"]
